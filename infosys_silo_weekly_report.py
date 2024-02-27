@@ -17,6 +17,10 @@ from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import *
 from pyspark.sql.window import Window
 
+from pyspark.sql import SparkSession, DataFrame
+from pyspark.sql.functions import *
+from pyspark.sql.window import Window
+
 # Initialize Spark session
 spark = SparkSession.builder.appName("Data Transformation").getOrCreate()
 
@@ -47,31 +51,36 @@ def join_datasets(silos_df: DataFrame, histavg_df: DataFrame) -> DataFrame:
     return _join_datasets
 
 # Function to fill gaps with average tons
-def fill_gaps_with_average(df: DataFrame) -> DataFrame:
-    return df.withColumn('silo_wt_in_tons', when(col("silo_wt_in_tons").isNull(), col("average_tons")).otherwise(col("silo_wt_in_tons")))
-
+def fill_gaps_with_average() -> DataFrame:
+    def _fill_gaps_with_average(df: DataFrame) -> DataFrame:
+        return df.withColumn('silo_wt_in_tons', when(col("silo_wt_in_tons").isNull(), col("average_tons")).otherwise(col("silo_wt_in_tons")))
+    return _fill_gaps_with_average
 
 # Function to calculate KPIs
-def calculate_kpis(df: DataFrame) -> DataFrame:
-    windowspec_7day = Window.partitionBy(window("date", "7 days")).orderBy(col("date"))
-    windowspec_daily = Window.orderBy("date").rowsBetween(Window.unboundedPreceding, Window.currentRow)
-    df = df.withColumn("weekly_total_tons", when(col('day')=='Wednesday', sum(col("silo_wt_in_tons")).over(windowspec_7day)))
-    df = df.withColumn("monthly_grand_total", sum(col('silo_wt_in_tons')).over(Window.partitionBy()))
-    return df.withColumn("daily_total_tons", sum(col("silo_wt_in_tons")).over(windowspec_daily))
-
+def calculate_kpis() -> DataFrame:
+    def _calculate_kpis(df: DataFrame) -> DataFrame:
+        windowspec_7day = Window.partitionBy(window("date", "7 days")).orderBy(col("date"))
+        windowspec_daily = Window.orderBy("date").rowsBetween(Window.unboundedPreceding, Window.currentRow)
+        df = df.withColumn("weekly_total_tons", when(col('day')=='Wednesday', sum(col("silo_wt_in_tons")).over(windowspec_7day)))
+        df = df.withColumn("monthly_grand_total", sum(col('silo_wt_in_tons')).over(Window.partitionBy()))
+        return df.withColumn("daily_total_tons", sum(col("silo_wt_in_tons")).over(windowspec_daily))
+    return _calculate_kpis
 
 # Function to format output
-def format_output(df: DataFrame) -> DataFrame:
-    df = df.drop('day', 'average_tons')
-    df = df.withColumn("weekly_total_tons", col('weekly_total_tons').cast(StringType()))
-    df = df.na.fill(value='', subset=["weekly_total_tons"])
-    return df.withColumn("date", date_format("date", "M/d/yyyy"))
-
+def format_output() -> DataFrame:
+    def _format_output(df: DataFrame) -> DataFrame:
+        df = df.drop('day', 'average_tons')
+        df = df.withColumn("weekly_total_tons", col('weekly_total_tons').cast(StringType()))
+        df = df.na.fill(value='', subset=["weekly_total_tons"])
+        
+        return df.withColumn("date", date_format("date", "M/d/yyyy"))
+    return _format_output
 
 # Function to write output
-def write_output(df: DataFrame, output_path: str) -> None:
-    df.coalesce(1).write.option("header", "true").mode("overwrite").csv(output_path)
-
+def write_output(output_path: str) -> None:
+    def _write_output(df: DataFrame) -> None:
+        df.coalesce(1).write.option("header", "true").mode("overwrite").csv(output_path)
+    return _write_output
 
 # Load datasets
 silos_actuals_input_path = "dbfs:/FileStore/spark/silo_actuals.csv"
@@ -82,17 +91,18 @@ silos_df = load_dataset(silos_actuals_input_path)
 histavg_df = load_dataset(historical_averages_file_path)
 
 # Create date sequence DataFrame
-date_sequence_df = create_date_sequence("start_date", "end_date")
+date_sequence_df = create_date_sequence("6/1/2023", "6/30/2023")
 
 # Apply transformations using DataFrame.transform
 transformed_df = (date_sequence_df
                   .transform(join_datasets(silos_df, histavg_df))
-                  .transform(fill_gaps_with_average)
-                  .transform(calculate_kpis)
-                  .transform(format_output))
-
+                  .transform(fill_gaps_with_average())
+                  .transform(calculate_kpis())
+                  .transform(format_output()))
 
 # Write the output
 #write_output(output_path)(transformed_df)
 display(transformed_df)
+transformed_df.coalesce(1).write.option("header", "true").mode("overwrite").csv(output_path)
+
 
