@@ -102,7 +102,7 @@ transformed_df = (date_sequence_df
 
 # Write the output
 #write_output(output_path)(transformed_df)
-display(transformed_df)
+#display(transformed_df)
 transformed_df.coalesce(1).write.option("header", "true").mode("overwrite").csv(output_path)
 
 
