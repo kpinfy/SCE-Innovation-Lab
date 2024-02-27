@@ -1,16 +1,4 @@
-################################################################################
-# Script Name: infosys_silo_weekly_report.py
-# Purpose: Generate the weekly Silo report by sampling actual Silo readings and
-#          calculating historical Silos reading averages (for days in the week).
-#
-# Source datasets: historical_averages.csv, silo_actuals.csv
-# Target dataset: transformed_df
-# Last Modified By: Infosys Team
-# Last Modified Date: Feb 25, 2024
-# Version: 1.0
-# Version Comment: Final version
-################################################################################
-# Define the start and end dates
+# Databricks notebook source
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import *
 from pyspark.sql.window import Window
@@ -42,8 +30,11 @@ def create_date_sequence(start_date: str, end_date: str) -> DataFrame:
 # Function to join output dataset with inputs
 def join_datasets(silos_df: DataFrame, histavg_df: DataFrame) -> DataFrame:
     def _join_datasets(df: DataFrame) -> DataFrame:
-        df = df.join(silos_df, on='date', how='left')
+    
+        df = df.join(silos_df.withColumn('date',to_date(col('date'),"M/d/yyyy")), on='date', how='left')
         df = df.withColumn("day", date_format(col("date"), "EEEE"))
+        
+
         return df.join(histavg_df, on='day', how='left')
     return _join_datasets
 
@@ -98,19 +89,7 @@ transformed_df = (date_sequence_df
                   .transform(format_output())).select("date",'silo_wt_in_tons','weekly_total_tons','mtd_running_total_tons','monthly_grand_total')
 
 # Write the output
-#write_output(output_path)(transformed_df)
+write_output(output_path)(transformed_df)
 #display(transformed_df)
 transformed_df.coalesce(1).write.option("header", "true").mode("overwrite").csv(output_path)
-# Apply transformations using DataFrame.transform
-transformed_df = (date_sequence_df
-                  .transform(join_datasets(silos_df, histavg_df))
-                  .transform(fill_gaps_with_average())
-                  .transform(calculate_kpis())
-                  .transform(format_output()))
-
-# Write the output
-#write_output(output_path)(transformed_df)
-#display(transformed_df)
-transformed_df.coalesce(1).write.option("header", "true").mode("overwrite").csv(output_path)
-
 
