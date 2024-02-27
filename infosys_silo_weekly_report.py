@@ -11,15 +11,12 @@
 # Version Comment: Final version
 ################################################################################
 # Define the start and end dates
-start_date = "6/1/2023"
-end_date = "6/30/2023"
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import *
 from pyspark.sql.window import Window
 
-from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql.functions import *
-from pyspark.sql.window import Window
+start_date = "6/1/2023"
+end_date = "6/30/2023"
 
 # Initialize Spark session
 spark = SparkSession.builder.appName("Data Transformation").getOrCreate()
@@ -63,7 +60,7 @@ def calculate_kpis() -> DataFrame:
         windowspec_daily = Window.orderBy("date").rowsBetween(Window.unboundedPreceding, Window.currentRow)
         df = df.withColumn("weekly_total_tons", when(col('day')=='Wednesday', sum(col("silo_wt_in_tons")).over(windowspec_7day)))
         df = df.withColumn("monthly_grand_total", sum(col('silo_wt_in_tons')).over(Window.partitionBy()))
-        return df.withColumn("daily_total_tons", sum(col("silo_wt_in_tons")).over(windowspec_daily))
+        return df.withColumn("mtd_running_total_tons", sum(col("silo_wt_in_tons")).over(windowspec_daily))
     return _calculate_kpis
 
 # Function to format output
@@ -91,8 +88,19 @@ silos_df = load_dataset(silos_actuals_input_path)
 histavg_df = load_dataset(historical_averages_file_path)
 
 # Create date sequence DataFrame
-date_sequence_df = create_date_sequence("6/1/2023", "6/30/2023")
+date_sequence_df = create_date_sequence(start_date, end_date)
 
+# Apply transformations using DataFrame.transform
+transformed_df = (date_sequence_df
+                  .transform(join_datasets(silos_df, histavg_df))
+                  .transform(fill_gaps_with_average())
+                  .transform(calculate_kpis())
+                  .transform(format_output())).select("date",'silo_wt_in_tons','weekly_total_tons','mtd_running_total_tons','monthly_grand_total')
+
+# Write the output
+#write_output(output_path)(transformed_df)
+#display(transformed_df)
+transformed_df.coalesce(1).write.option("header", "true").mode("overwrite").csv(output_path)
 # Apply transformations using DataFrame.transform
 transformed_df = (date_sequence_df
                   .transform(join_datasets(silos_df, histavg_df))
